@@ -62,6 +62,10 @@ def _timestamped_selected_score_output_path(model_name: str, base_dir: str | Non
 
 def _score_model_tag(name: str) -> str:
     s = str(name or "").strip().upper()
+    if "NLLB33BFT" in s or "NLLB_33B_FT" in s or "NLLB-3.3B-FT" in s or "NLLB3.3BFT" in s:
+        return "NLLB33BFT"
+    if "NLLB33B" in s or "NLLB_33B" in s or "NLLB-3.3B" in s or "NLLB3.3B" in s:
+        return "NLLB33B"
     if "NLLB13BFT" in s or "NLLB_13B_FT" in s or "NLLB-1.3B-FT" in s or "NLLB1.3BFT" in s:
         return "NLLB13BFT"
     if "NLLB13B" in s or "NLLB_13B" in s or "NLLB-1.3B" in s or "NLLB1.3B" in s:
@@ -1208,11 +1212,26 @@ def _resolve_nllb_model_dir(model_dir: str) -> str:
     def has_model_files(path: str) -> bool:
         if not os.path.isdir(path):
             return False
-        return os.path.exists(os.path.join(path, "config.json")) and (
-            os.path.exists(os.path.join(path, "pytorch_model.bin"))
-            or os.path.exists(os.path.join(path, "model.safetensors"))
-            or os.path.exists(os.path.join(path, "model.safetensors.index.json"))
+        try:
+            names = set(os.listdir(path))
+        except Exception:
+            return False
+
+        has_config = "config.json" in names
+        has_tokenizer = (
+            "tokenizer.json" in names
+            or "tokenizer_config.json" in names
+            or "sentencepiece.bpe.model" in names
         )
+        has_weights = (
+            "pytorch_model.bin" in names
+            or "pytorch_model.bin.index.json" in names
+            or any(name.startswith("pytorch_model-") and name.endswith(".bin") for name in names)
+            or "model.safetensors" in names
+            or "model.safetensors.index.json" in names
+            or any(name.startswith("model-") and name.endswith(".safetensors") for name in names)
+        )
+        return has_config and has_tokenizer and has_weights
 
     if has_model_files(model_dir):
         return model_dir
@@ -1239,7 +1258,11 @@ def _resolve_nllb_model_dir(model_dir: str) -> str:
     if config_cands:
         return sorted(config_cands, key=lambda p: os.path.getmtime(p))[-1]
 
-    raise RuntimeError(f"无法在目录中定位可用的 NLLB 模型文件: {model_dir}")
+    raise RuntimeError(
+        "无法在目录中定位可用的 NLLB 模型文件: "
+        f"{model_dir}。目录中至少需要包含 config.json、tokenizer 文件以及模型权重文件"
+        "（支持 pytorch_model.bin、pytorch_model.bin.index.json + 分片 bin、model.safetensors）。"
+    )
 
 def _infer_model_paths(model_dir: str, prefer_tag: str | None = None):
     model_dir = os.path.normpath(str(model_dir).strip().strip('"').strip("'"))
@@ -3999,8 +4022,10 @@ def ui_main():
         "qwen_path": tk.StringVar(value=r"D:\K2C_Translator_Plus\（Qwen2.5）Translator-V4.0.py"),
         "nllb_model_dir": tk.StringVar(value=r"D:\K2C_Translator_Plus\models\models--facebook--nllb-200-distilled-600M"),
         "nllb_13b_model_dir": tk.StringVar(value=r"D:\K2C_Translator_Plus\models\models--facebook--nllb-200-1.3B"),
+        "nllb_33b_model_dir": tk.StringVar(value=r"D:\K2C_Translator_Plus\models\models--facebook--nllb-200-3.3B"),
         "nllb_ft_model_dir": tk.StringVar(value=r"D:\K2C_Translator_Plus\translated models\NLLB200\_1st"),
         "nllb_13b_ft_model_dir": tk.StringVar(value=r"D:\K2C_Translator_Plus\translated models\NLLB200-13B"),
+        "nllb_33b_ft_model_dir": tk.StringVar(value=r"D:\K2C_Translator_Plus\translated models\NLLB200-33B"),
         "output_dir": tk.StringVar(value=r"D:\PythonProject\evaluate models performance"),
         "src_lang": tk.StringVar(value="kor_Hang"),
         "tgt_lang": tk.StringVar(value="zho_Hans"),
@@ -4012,6 +4037,10 @@ def ui_main():
 
     def v6_model_label(kind: str) -> str:
         kind = str(kind or "").strip().lower()
+        if kind == "nllb_33b_ft":
+            return "NLLB33BFT"
+        if kind == "nllb_33b":
+            return "NLLB33B"
         if kind == "nllb_13b_ft":
             return "NLLB13BFT"
         if kind == "nllb_13b":
@@ -4061,6 +4090,11 @@ def ui_main():
         if p:
             v6["nllb_13b_model_dir"].set(p)
 
+    def v6_browse_nllb_33b_model_dir():
+        p = _browse_dir("选择 NLLB 3.3B 模型目录")
+        if p:
+            v6["nllb_33b_model_dir"].set(p)
+
     def v6_browse_nllb_ft_model_dir():
         p = _browse_dir("选择 NLLB-FT 模型目录")
         if p:
@@ -4070,6 +4104,11 @@ def ui_main():
         p = _browse_dir("选择 NLLB-1.3B-FT 模型目录")
         if p:
             v6["nllb_13b_ft_model_dir"].set(p)
+
+    def v6_browse_nllb_33b_ft_model_dir():
+        p = _browse_dir("选择 NLLB-3.3B-FT 模型目录")
+        if p:
+            v6["nllb_33b_ft_model_dir"].set(p)
 
     def v6_browse_output_dir():
         init_dir = _norm_path(v6["output_dir"].get()) if str(v6["output_dir"].get()).strip() else r"D:\PythonProject\evaluate models performance"
@@ -4092,8 +4131,10 @@ def ui_main():
         qwen_path = _norm_path(v6["qwen_path"].get())
         nllb_model_dir = _norm_path(v6["nllb_model_dir"].get())
         nllb_13b_model_dir = _norm_path(v6["nllb_13b_model_dir"].get())
+        nllb_33b_model_dir = _norm_path(v6["nllb_33b_model_dir"].get())
         nllb_ft_model_dir = _norm_path(v6["nllb_ft_model_dir"].get())
         nllb_13b_ft_model_dir = _norm_path(v6["nllb_13b_ft_model_dir"].get())
+        nllb_33b_ft_model_dir = _norm_path(v6["nllb_33b_ft_model_dir"].get())
         output_dir = _norm_path(v6["output_dir"].get())
         src_lang = str(v6["src_lang"].get()).strip()
         tgt_lang = str(v6["tgt_lang"].get()).strip()
@@ -4197,6 +4238,24 @@ def ui_main():
                     default_category=dataset_kind,
                     translator_name=f"NLLB13BFT-{dataset_kind}",
                 )
+            elif translator_kind == "nllb_33b_ft":
+                if not nllb_33b_ft_model_dir or not os.path.exists(nllb_33b_ft_model_dir):
+                    raise RuntimeError("NLLB-3.3B-FT 模型目录不存在")
+                eval_set_nllb(
+                    eval_path=eval_path,
+                    model_dir=nllb_33b_ft_model_dir,
+                    eval_out=None,
+                    eval_out_dir=output_dir,
+                    eval_sheet=None,
+                    n=(n if n > 0 else None),
+                    seed=seed,
+                    max_len=max_len,
+                    src_lang=src_lang,
+                    tgt_lang=tgt_lang,
+                    batch_size=batch_size,
+                    default_category=dataset_kind,
+                    translator_name=f"NLLB33BFT-{dataset_kind}",
+                )
             elif translator_kind == "nllb_13b":
                 if not nllb_13b_model_dir or not os.path.exists(nllb_13b_model_dir):
                     raise RuntimeError("NLLB 1.3B 模型目录不存在")
@@ -4214,6 +4273,24 @@ def ui_main():
                     batch_size=batch_size,
                     default_category=dataset_kind,
                     translator_name=f"NLLB13B-{dataset_kind}",
+                )
+            elif translator_kind == "nllb_33b":
+                if not nllb_33b_model_dir or not os.path.exists(nllb_33b_model_dir):
+                    raise RuntimeError("NLLB 3.3B 模型目录不存在")
+                eval_set_nllb(
+                    eval_path=eval_path,
+                    model_dir=nllb_33b_model_dir,
+                    eval_out=None,
+                    eval_out_dir=output_dir,
+                    eval_sheet=None,
+                    n=(n if n > 0 else None),
+                    seed=seed,
+                    max_len=max_len,
+                    src_lang=src_lang,
+                    tgt_lang=tgt_lang,
+                    batch_size=batch_size,
+                    default_category=dataset_kind,
+                    translator_name=f"NLLB33B-{dataset_kind}",
                 )
             else:
                 if not nllb_model_dir or not os.path.exists(nllb_model_dir):
@@ -4244,7 +4321,7 @@ def ui_main():
     )
     r += 1
     ttk.Label(tab6, text="评测模型").grid(row=r, column=0, sticky="w")
-    ttk.Combobox(tab6, textvariable=v6["translator_kind"], values=("nllb", "nllb_13b", "nllb_ft", "nllb_13b_ft", "baidu", "kimi", "qwen"), state="readonly", width=18).grid(
+    ttk.Combobox(tab6, textvariable=v6["translator_kind"], values=("nllb", "nllb_13b", "nllb_33b", "nllb_ft", "nllb_13b_ft", "nllb_33b_ft","baidu", "kimi", "qwen"), state="readonly", width=18).grid(
         row=r, column=1, sticky="w", padx=6
     )
     r += 1
@@ -4276,6 +4353,10 @@ def ui_main():
     ttk.Entry(tab6, textvariable=v6["nllb_13b_model_dir"], width=86).grid(row=r, column=1, sticky="we", padx=6)
     ttk.Button(tab6, text="选择", command=v6_browse_nllb_13b_model_dir).grid(row=r, column=2, sticky="we")
     r += 1
+    ttk.Label(tab6, text="NLLB-3.3B 模型目录").grid(row=r, column=0, sticky="w")
+    ttk.Entry(tab6, textvariable=v6["nllb_33b_model_dir"], width=86).grid(row=r, column=1, sticky="we", padx=6)
+    ttk.Button(tab6, text="选择", command=v6_browse_nllb_33b_model_dir).grid(row=r, column=2, sticky="we")
+    r += 1
     ttk.Label(tab6, text="NLLB-FT 模型目录").grid(row=r, column=0, sticky="w")
     ttk.Entry(tab6, textvariable=v6["nllb_ft_model_dir"], width=86).grid(row=r, column=1, sticky="we", padx=6)
     ttk.Button(tab6, text="选择", command=v6_browse_nllb_ft_model_dir).grid(row=r, column=2, sticky="we")
@@ -4283,6 +4364,10 @@ def ui_main():
     ttk.Label(tab6, text="NLLB-1.3B-FT 模型目录").grid(row=r, column=0, sticky="w")
     ttk.Entry(tab6, textvariable=v6["nllb_13b_ft_model_dir"], width=86).grid(row=r, column=1, sticky="we", padx=6)
     ttk.Button(tab6, text="选择", command=v6_browse_nllb_13b_ft_model_dir).grid(row=r, column=2, sticky="we")
+    r += 1
+    ttk.Label(tab6, text="NLLB-3.3B-FT 模型目录").grid(row=r, column=0, sticky="w")
+    ttk.Entry(tab6, textvariable=v6["nllb_33b_ft_model_dir"], width=86).grid(row=r, column=1, sticky="we", padx=6)
+    ttk.Button(tab6, text="选择", command=v6_browse_nllb_33b_ft_model_dir).grid(row=r, column=2, sticky="we")
     r += 1
     ttk.Label(tab6, text="输出文件夹").grid(row=r, column=0, sticky="w")
     ttk.Entry(tab6, textvariable=v6["output_dir"], width=86).grid(row=r, column=1, sticky="we", padx=6)
