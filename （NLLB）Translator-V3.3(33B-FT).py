@@ -32,8 +32,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # ==========================================
 
 NLLB_MODEL_DIR = os.getenv("NLLB_MODEL_DIR") or r"D:\K2C_Translator_Plus\models\models--facebook--nllb-200-3.3B"
-NLLB_BASE_MODEL_DIR = NLLB_MODEL_DIR
-NLLB_FINETUNED_MODEL_DIR = os.getenv("NLLB_FINETUNED_MODEL_DIR") or r"D:\K2C_Translator_Plus\translated models\NLLB200-13B\merged_model"
+NLLB_BASE_MODEL_DIR = os.getenv("NLLB_BASE_MODEL_DIR") or NLLB_MODEL_DIR
+NLLB_FINETUNED_MODEL_DIR = os.getenv("NLLB_FINETUNED_MODEL_DIR") or r"D:\K2C_Translator_Plus\translated models\NLLB200-33B\merged_model"
 NLLB_DEFAULT_BATCH_SIZE = int(os.getenv("NLLB_BATCH_SIZE", "64"))
 NLLB_DEFAULT_MAX_LENGTH = int(os.getenv("NLLB_MAX_LENGTH", "96"))
 NLLB_DEVICE_PREFERENCE = (os.getenv("NLLB_DEVICE") or "auto").strip().lower()
@@ -89,11 +89,26 @@ def _resolve_nllb_model_dir(model_dir: str) -> str:
     def has_model_files(path: str) -> bool:
         if not os.path.isdir(path):
             return False
-        return os.path.exists(os.path.join(path, "config.json")) and (
-            os.path.exists(os.path.join(path, "pytorch_model.bin"))
-            or os.path.exists(os.path.join(path, "model.safetensors"))
-            or os.path.exists(os.path.join(path, "model.safetensors.index.json"))
+        try:
+            names = set(os.listdir(path))
+        except Exception:
+            return False
+
+        has_config = "config.json" in names
+        has_tokenizer = (
+            "tokenizer.json" in names
+            or "tokenizer_config.json" in names
+            or "sentencepiece.bpe.model" in names
         )
+        has_weights = (
+            "pytorch_model.bin" in names
+            or "pytorch_model.bin.index.json" in names
+            or any(name.startswith("pytorch_model-") and name.endswith(".bin") for name in names)
+            or "model.safetensors" in names
+            or "model.safetensors.index.json" in names
+            or any(name.startswith("model-") and name.endswith(".safetensors") for name in names)
+        )
+        return has_config and has_tokenizer and has_weights
 
     if has_model_files(model_dir):
         return model_dir
@@ -116,7 +131,11 @@ def _resolve_nllb_model_dir(model_dir: str) -> str:
             if has_model_files(cand):
                 return cand
 
-    raise RuntimeError(f"无法定位可用的 NLLB 模型文件: {model_dir}")
+    raise RuntimeError(
+        "无法定位可用的 NLLB 模型文件目录: "
+        f"{model_dir}。目录中至少需要包含 config.json、tokenizer 文件以及模型权重文件"
+        "（支持 pytorch_model.bin、pytorch_model.bin.index.json + 分片 bin、model.safetensors）。"
+    )
 
 
 def _load_nllb_runtime():
@@ -1450,7 +1469,7 @@ style.configure("TLabel", background="#f5f6fa", font=("微软雅黑", 10))
 style.configure("Header.TLabel", font=("微软雅黑", 14, "bold"), foreground="#166534")
 main_frame = ttk.Frame(root, padding="20")
 main_frame.pack(fill="both", expand=True)
-ttk.Label(main_frame, text="NLLB-200 本地翻译 V3.2 (基础模型 / 微调模型)", style="Header.TLabel").pack(pady=(0, 20))
+ttk.Label(main_frame, text="NLLB-200 本地翻译 V3.3 (基础模型 / 微调模型)", style="Header.TLabel").pack(pady=(0, 20))
 file_card = ttk.LabelFrame(main_frame, text=" 文件设置 ", padding=15)
 file_card.pack(fill="x", pady=10)
 ttk.Label(file_card, text="待翻译文件:").grid(row=0, column=0, sticky="w", pady=5)
