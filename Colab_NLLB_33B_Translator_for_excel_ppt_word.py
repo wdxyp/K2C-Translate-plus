@@ -61,16 +61,22 @@ def disable_incompatible_torchao_for_peft():
     except Exception:
         return
 
+    def _safe_is_torchao_available():
+        try:
+            return _peft_import_utils._orig_is_torchao_available()
+        except ImportError:
+            return False
+
     if not hasattr(_peft_import_utils, "_orig_is_torchao_available"):
         _peft_import_utils._orig_is_torchao_available = _peft_import_utils.is_torchao_available
+    _peft_import_utils.is_torchao_available = _safe_is_torchao_available
 
-        def _safe_is_torchao_available():
-            try:
-                return _peft_import_utils._orig_is_torchao_available()
-            except ImportError:
-                return False
+    try:
+        import peft.tuners.lora.torchao as _peft_lora_torchao
 
-        _peft_import_utils.is_torchao_available = _safe_is_torchao_available
+        _peft_lora_torchao.is_torchao_available = _safe_is_torchao_available
+    except Exception:
+        pass
 
     if torchao_ver and _version_lt(torchao_ver, "0.16.0"):
         print(
